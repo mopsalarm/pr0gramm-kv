@@ -33,7 +33,12 @@ func main() {
 		Name: "kv",
 		Routing: func(router *httprouter.Router) http.Handler {
 			api.RegisterTo(router)
-			return handlers.CompressHandler(router)
+			compress := handlers.CompressHandler(router)
+
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-cache, private")
+				compress.ServeHTTP(w, r)
+			})
 		},
 	})
 }
