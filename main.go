@@ -5,9 +5,9 @@ import (
 	"github.com/flachnetz/startup/startup_http"
 	"github.com/flachnetz/startup/startup_metrics"
 	"github.com/flachnetz/startup/startup_postgres"
+	"github.com/gorilla/handlers"
 	"github.com/julienschmidt/httprouter"
 	"net/http"
-	"github.com/gorilla/handlers"
 )
 
 func main() {

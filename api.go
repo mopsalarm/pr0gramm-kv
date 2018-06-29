@@ -1,19 +1,19 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"github.com/flachnetz/startup/lib/httputil"
+	"github.com/flachnetz/startup/lib/mapper"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/errors"
+	"github.com/rcrowley/go-metrics"
 	"io/ioutil"
 	"net/http"
-	"time"
 	"reflect"
-	"github.com/flachnetz/startup/lib/mapper"
-	"database/sql"
-	"github.com/rcrowley/go-metrics"
+	"time"
 )
 
 const maxValueSize = 1024 * 256
@@ -45,6 +45,7 @@ type API struct {
 
 func (api API) RegisterTo(router *httprouter.Router) {
 	router.GET("/token/:token/key/:key", api.GetValue())
+	router.GET("/token/:token/key/:key/version/:version", api.GetValueVersion())
 	router.POST("/token/:token/key/:key/version/:version", api.PostValue())
 }
 
@@ -94,10 +95,11 @@ func (api API) PostValue() httprouter.Handle {
 	}
 }
 
-func (api API) GetValue() httprouter.Handle {
+func (api API) GetValueVersion() httprouter.Handle {
 	type requestValues struct {
-		Token Token `path:"token" validate:"required"`
-		Key   Key   `path:"key" validate:"required"`
+		Token   Token `path:"token" validate:"required"`
+		Key     Key   `path:"key" validate:"required"`
+		Version int   `path:"version" validate:"required,min=1"`
 	}
 
 	type resultValues struct {
@@ -117,9 +119,48 @@ func (api API) GetValue() httprouter.Handle {
 				return nil, errors.WithMessage(err, "getting value")
 			}
 
+			if version != opts.Version {
+				return nil, errors.WithMessage(err, "version mismatch")
+			}
+
+			// this one is queried with the version, so serve it as immutable.
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+
 			metricGetValueSuccess.Mark(1)
 			return resultValues{version, payload}, err
 		})
+	}
+}
+
+func (api API) GetValue() httprouter.Handle {
+	type requestValues struct {
+		Token Token `path:"token" validate:"required"`
+		Key   Key   `path:"key" validate:"required"`
+	}
+
+	metricGetValueSuccess := metrics.GetOrRegisterMeter("value.get[success:true]", nil)
+	metricGetValueFailure := metrics.GetOrRegisterMeter("value.get[success:false]", nil)
+
+	return func(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+		var opts requestValues
+		if err := httputil.ExtractParameters(&opts, r, params); err != nil {
+			httputil.WriteError(w, http.StatusBadRequest, err)
+			return
+		}
+
+		_, version, err := api.kv.Get(opts.Token, opts.Key)
+		if err != nil {
+			metricGetValueFailure.Mark(1)
+			httputil.WriteGenericError(w, errors.WithMessage(err, "getting value"))
+			return
+		}
+
+		w.Header().Set("Location", fmt.Sprintf(
+			"/token/%s/key/%s/version/%d", opts.Token, opts.Key, version))
+
+		w.WriteHeader(http.StatusTemporaryRedirect)
+
+		metricGetValueSuccess.Mark(1)
 	}
 }
 
@@ -161,6 +202,10 @@ type Key string
 var ErrNoSuchKey = errors.New("no such key")
 var ErrVersionConflict = errors.New("version conflict")
 var ErrValueTooLarge = errors.New("value too large")
+
+func (t Token) String() string {
+	return uuid.UUID(t).String()
+}
 
 type KVStore struct {
 	db *sqlx.DB
