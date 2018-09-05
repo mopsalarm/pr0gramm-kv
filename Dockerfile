@@ -1,24 +1,25 @@
-FROM golang:1.11beta1-alpine as builder
+FROM golang:1.11-alpine3.8 as builder
 
-WORKDIR $GOPATH/src/github.com/mopsalarm/kv
+RUN apk add --no-cache git
 
-ADD https://github.com/golang/dep/releases/download/v0.4.1/dep-linux-amd64 /usr/bin/dep
-RUN chmod a+x /usr/bin/dep
+ENV GO111MODULE=on
+ENV PACKAGE github.com/mopsalarm/kv
+WORKDIR $GOPATH/src/$PACKAGE/
 
-RUN apk add --no-cache git ca-certificates
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY Gopkg.toml Gopkg.lock ./
-RUN dep ensure --vendor-only -v
+ENV CGO_ENABLED=0
 
 COPY . .
-RUN go build -v -ldflags="-s -w" -o /binary
+RUN go build -v -ldflags="-s -w" -o /kv .
 
-FROM alpine:3.7
+
+FROM alpine:3.8
+RUN apk add --no-cache ca-certificates
 EXPOSE 3080
 
-RUN apk add --no-cache ca-certificates
-
 COPY sql/ /sql/
-COPY --from=builder /binary /kv
+COPY --from=builder /kv /
 
 ENTRYPOINT ["/kv", "--verbose"]
