@@ -155,8 +155,10 @@ func (api API) GetValue() httprouter.Handle {
 			return
 		}
 
+		prefix := r.Header.Get("X-Forwarded-Prefix")
+
 		w.Header().Set("Location", fmt.Sprintf(
-			"/token/%s/key/%s/version/%d", opts.Token, opts.Key, version))
+			"%s/token/%s/key/%s/version/%d", prefix, opts.Token, opts.Key, version))
 
 		w.WriteHeader(http.StatusTemporaryRedirect)
 

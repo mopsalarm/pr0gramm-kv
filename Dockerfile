@@ -1,4 +1,4 @@
-FROM golang:1.11-alpine3.8 as builder
+FROM golang:1.12.6-alpine3.9 as builder
 
 RUN apk add --no-cache git
 
@@ -15,7 +15,7 @@ COPY . .
 RUN go build -v -ldflags="-s -w" -o /kv .
 
 
-FROM alpine:3.8
+FROM alpine:3.9
 RUN apk add --no-cache ca-certificates
 EXPOSE 3080
 
